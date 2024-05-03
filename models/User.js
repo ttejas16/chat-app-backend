@@ -16,13 +16,19 @@ const User = sequelize.define('User', {
         type: DataTypes.STRING,
         allowNull: false
     },
+    avatar: {
+        type: DataTypes.STRING,
+        defaultValue: "",
+        allowNull: false
+    },
     hash: {
         type: DataTypes.STRING,
         allowNull: false
     },
     status: {
         type: DataTypes.STRING,
-        allowNull: true
+        defaultValue: "Hello there!",
+        allowNull: false,
     },
 }, {
     tableName: "User"

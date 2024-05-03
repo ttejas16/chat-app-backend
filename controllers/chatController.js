@@ -136,7 +136,7 @@ async function getRoomList(req, res) {
         include: [
             {
                 model: User,
-                attributes: ["id", "userName"]
+                attributes: ["id", "userName", "avatar"]
             },
             {
                 model: Message,
@@ -156,8 +156,9 @@ async function getRoomList(req, res) {
 
 
     let rooms = userRooms.map((room) => {
-
         let roomName = room.dataValues?.roomName;
+        let targetUserId = null;
+        let avatar = null;
         let lastMessage = room.dataValues?.Messages.map((msg) => {
             let user = msg.dataValues?.User;
 
@@ -165,15 +166,18 @@ async function getRoomList(req, res) {
                 content: msg.dataValues?.content,
                 user: {
                     id: msg.dataValues?.UserId,
-                    userName: user.dataValues?.userName
+                    userName: user.dataValues?.userName,
                 }
             };
         });
 
         if (!room.dataValues?.isGroup) {
             room.dataValues?.Users?.forEach(u => {
+
                 if (u.id !== user.id) {
                     roomName = u.dataValues?.userName;
+                    avatar = u.dataValues?.avatar
+                    targetUserId = u.dataValues?.id;
                 }
             });
         }
@@ -182,6 +186,8 @@ async function getRoomList(req, res) {
             id: room.dataValues?.id,
             isGroup: room.dataValues?.isGroup,
             roomName: roomName,
+            targetUserId: targetUserId,
+            avatar: avatar,
             lastMessage: lastMessage.length != 0 ? lastMessage[0] : null
         };
     });

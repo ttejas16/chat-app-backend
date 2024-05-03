@@ -30,24 +30,20 @@ async function createAll() {
 
 createAll();
 
-const originURL = "http://localhost:5173";
-
-
 const app = express()
 const server = http.createServer(app);
 
 app.use(logger('dev'));
 app.use(cors({
-    origin: originURL,
+    origin: process.env.FRONTEND_URL,
     credentials: true
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(verifyToken);
 
-
-
-app.get("/", async (req, res) => {
+app.get("/", (req, res) => {
     res.json('test');
 })
 
@@ -55,7 +51,6 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/chat", chatRouter);
 
 initializeSocket(server);
-
 
 app.use((req, res) => {
     res.status(404).json({ success: false, msg: "404 resource not found" });

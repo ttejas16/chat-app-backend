@@ -9,20 +9,20 @@ const jwt = require('jsonwebtoken');
  */
 function verifyToken(req, res, next) {
     const token = req.cookies?.accessToken;
-    const user = { isAuthenticated: false, profile: {} };
+    let user = {};
 
     try {
         if (token && jwt.verify(token, process.env.JWT_SECRET_KEY)) {
             const payload = jwt.decode(token);
-            user.profile = {
-                ...payload,
-            };
-            user.isAuthenticated = true;
+            user = {
+                ...payload
+            }
+
         }
 
     } catch (err) {
         console.log("token expired or is invalid");
-        console.log(err);
+        // console.log(err);
     }
 
     req.user = user;

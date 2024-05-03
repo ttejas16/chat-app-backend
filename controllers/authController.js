@@ -1,15 +1,47 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+
 const User = require('../models/User');
 const Room = require("../models/Room");
 const Participant = require("../models/Participant");
 const Message = require("../models/Message");
 
+const { uploadImage } = require('../utils/cloudinaryUpload');
+
 function createToken(payload) {
     jwt.decode()
     const token = jwt.sign({ ...payload }, process.env.JWT_SECRET_KEY, { expiresIn: 60 * 60 });
     return token;
+}
+
+/**
+ * 
+ * @param {express.Request} req 
+ * @param {express.Response} res 
+*/
+async function getUser(req, res) {
+    const userId = req.user?.id;
+
+    if (!userId) {
+        res.status(401).json({ success: false, msg: "Unauthorised!", user: {} });
+        return;
+    }
+
+    const user = await User.findOne({
+        where: { id: userId },
+        attributes: {
+            exclude: ["hash"]
+        },
+        raw: true
+    });
+
+    if (!user) {
+        res.status(401).json({ success: false, msg: "Unauthorised!", user: {} });
+        return;
+    }
+
+    res.status(200).json({ success: true, user: user });
 }
 
 
@@ -18,11 +50,70 @@ function createToken(payload) {
  * @param {express.Request} req 
  * @param {express.Response} res 
  */
-async function getUser(req, res) {
-    // console.log(req.user);
-    res.json({ success: true, user: req.user });
+async function fetchUserProfile(req, res) {
+    const userId = req.user?.profile?.id;
+
+    if (!req.user?.isAuthenticated || !userId) {
+        res.json({ success: false, msg: "Unauthorised" });
+        return;
+    }
+
+    const user = await User.findOne({
+        where: {
+            id: userId
+        },
+        attributes: ["id", "userName", "email", "status", "createdAt", "updatedAt"]
+    });
+
+    if (!user) {
+        res.json({ success: false, msg: "Failed To Fetch Profile Info!" });
+        return;
+    }
+
+    res.json({ success: true, profile: { ...user.dataValues } });
 }
 
+/**
+ * 
+ * @param {express.Request} req 
+ * @param {express.Response} res 
+ */
+async function updateProfile(req, res) {
+    const { avatar, userName, status } = req.body;
+    let newAvatarURL = null;
+
+    if (req.file) {
+        const result = await uploadImage(req.file);
+
+        if (!result) {
+            res.status(400).json({ success: false, msg: "Can't process your request!" });
+            return;
+        }
+
+        newAvatarURL = result;
+    }
+
+    const [updateCount, [updatedUser]] = await User.update({
+        avatar: newAvatarURL ? newAvatarURL : avatar,
+        userName: userName,
+        status: status
+    }, {
+        where: {
+            id: req.user.id
+        },
+        returning: true,
+        raw: true
+    });
+
+    if (updateCount == 0) {
+        res.json({ success: false, msg: "Cannot Update Profile Try Again Later! " });
+        return;
+    }
+
+    delete updatedUser.hash;
+
+    res.json({ success: true, msg: "Profile Updated", updatedProfile: updatedUser });
+}
 
 /**
  * 
@@ -39,32 +130,29 @@ async function login(req, res) {
     }
 
     // after validating input credentials
-    const result = await User.findOne({
+    const user = await User.findOne({
         where: { email: email },
-        attributes: ["id", "userName", "hash"]
+        raw: true
     });
 
     // check if no such user exists
-    if (!result) {
+    if (!user) {
         res.status(400).json({ success: false, msg: "Invalid credentials" });
         return;
     }
 
     try {
         // compare hash against plain text password
-        const hash = result?.dataValues?.hash;
-        const validPassword = await bcrypt.compare(password, hash);
+        const validPassword = await bcrypt.compare(password, user.hash);
 
         if (!validPassword) {
             res.status(400).json({ success: false, msg: "Invalid credentials" });
             return;
         }
 
-        var userName = result?.dataValues?.userName;
-        var id = result?.dataValues?.id;
-
-        // create new access token
-        const token = createToken({ userName, id });
+        // create new access token 
+        //TODO: Making refresh tokens
+        const token = createToken({ userName: user.userName, id: user.id });
         res.cookie('accessToken', token, {
             httpOnly: true,
             secure: true,
@@ -78,10 +166,7 @@ async function login(req, res) {
         return;
     }
 
-    const user = {
-        isAuthenticated: true,
-        profile: { userName, id }
-    };
+    delete user.hash;
 
     res.status(200).json({ success: true, msg: "Login successfull", user: user });
 }
@@ -147,4 +232,4 @@ async function signup(req, res) {
 }
 
 
-module.exports = { login, logout, signup, getUser };
+module.exports = { login, logout, signup, getUser, fetchUserProfile, updateProfile };

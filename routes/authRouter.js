@@ -1,11 +1,15 @@
+const { upload } = require('../middleware/multer');
 const express = require('express');
 const authRouter = express.Router();
+const authController = require('../controllers/authController');
 
-const { login, signup, getUser, logout } = require('../controllers/authController');
+authRouter.post('/login', authController.login);
+authRouter.post('/logout', authController.logout);
+authRouter.post('/signup', authController.signup);
 
-authRouter.post('/login', login);
-authRouter.post('/logout', logout);
-authRouter.post('/signup', signup);
-authRouter.post('/getUser', getUser);
+authRouter.get('/getUser', authController.getUser);
+authRouter.post('/profile', authController.fetchUserProfile);
+
+authRouter.put('/updateProfile', upload.single("avatar"), authController.updateProfile);
 
 module.exports = authRouter;
