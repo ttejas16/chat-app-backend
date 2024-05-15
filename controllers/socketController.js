@@ -70,13 +70,16 @@ function initializeSocket(server) {
                     content: message.content
                 });
             }
-            socket.on('message', messageEventHandler);
 
-            socket.on('leave-room', (roomId) => {
+            function handleLeaveRoom(roomId) {
                 // console.log('client left the room');
                 socket.leave(roomId);
                 socket.removeListener('message', messageEventHandler);
-            })
+                socket.removeListener('leave-room', handleLeaveRoom);
+            }
+
+            socket.on('message', messageEventHandler);
+            socket.on('leave-room', handleLeaveRoom);
         })
 
         socket.on('online', (roomObjects, callback) => {

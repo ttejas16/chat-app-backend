@@ -36,7 +36,8 @@ const server = http.createServer(app);
 app.use(logger('dev'));
 app.use(cors({
     origin: process.env.FRONTEND_URL,
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT"]
 }));
 
 app.use(express.json());

@@ -2,6 +2,7 @@ const express = require('express');
 const User = require('../models/User');
 const Room = require('../models/Room');
 const Message = require('../models/Message');
+const Participant = require('../models/Participant');
 const { sequelize } = require('../utils/database');
 const { Op } = require('sequelize');
 
@@ -14,8 +15,8 @@ const { Op } = require('sequelize');
 async function addRoom(req, res) {
     const userId = req.body.userId; // id of user who creates a room/chat/group
     const participantIds = req.body.participants; // array of id(user)
-    const roomName = req.body.roomName || "";
     const isGroup = req.body.isGroup;
+    const roomName = req.body.roomName || "";
 
     if (!userId || !participantIds || participantIds.length == 0) {
         res.status(400).json({ success: false, msg: "Can Not Add Rooms!" });
@@ -34,8 +35,46 @@ async function addRoom(req, res) {
         return;
     }
 
+    let privateRoomName = "";
+
+    if (!isGroup) {
+        const user = await User.findOne({
+            where: {
+                id: participantIds[0]
+            },
+            attributes: ["id", "userName"]
+        });
+
+        // to check if chat/user (as this is not a group) already exists
+        const previousRooms = await owner.getRooms({
+            include: [
+                {
+                    model: User,
+                    attributes: ["id"],
+                    on: {
+                        id: sequelize.col('User.id')
+                    },
+                    where: {
+                        id: participantIds[0]
+                    }
+                }
+            ]
+        });
+
+        if (previousRooms.length > 0) {
+            res.status(400).json({
+                success: false,
+                msg: `You Already Have A Chat With ${user.dataValues?.userName}`
+            });
+            return;
+        }
+
+        // set opposite user's name
+        privateRoomName = user.dataValues?.userName;
+    }
+
     let room = await Room.create({
-        roomName: roomName,
+        roomName: isGroup ? roomName : "",
         isGroup: isGroup
     });
 
@@ -46,26 +85,10 @@ async function addRoom(req, res) {
 
     const _ = await room.addUsers([userId, ...participantIds]);
 
-    if (!room.dataValues?.isGroup) {
-        const user = await User.findOne({
-            where: {
-                id: participantIds[0]
-            },
-            attributes: ["id", "userName"]
-        });
-
-        if (!user) {
-            res.status(404).json({ success: false, msg: "User Not Found!" });
-            return;
-        }
-
-        room.dataValues.roomName = user.dataValues?.userName;
-    }
-
     room = {
         id: room.dataValues?.id,
         isGroup: room.dataValues?.isGroup,
-        roomName: room.dataValues?.roomName,
+        roomName: room.dataValues?.isGroup ? room.dataValues?.roomName : privateRoomName,
         lastMessage: null
     }
     res.status(200).json({ success: true, msg: "Created A Room", room: room });
