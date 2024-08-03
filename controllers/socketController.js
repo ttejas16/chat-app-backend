@@ -76,8 +76,14 @@ function initializeSocket(server) {
                 socket.leave(roomId);
                 socket.removeListener('message', messageEventHandler);
                 socket.removeListener('leave-room', handleLeaveRoom);
+                socket.removeAllListeners('typing', handleTypingEvents);
             }
 
+            function handleTypingEvents(payload) {
+                io.to(roomId).except(socket.id).emit('typing', payload);
+            }
+
+            socket.on('typing', handleTypingEvents);
             socket.on('message', messageEventHandler);
             socket.on('leave-room', handleLeaveRoom);
         })
