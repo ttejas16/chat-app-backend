@@ -5,6 +5,7 @@ const Message = require('../models/Message');
 const Participant = require('../models/Participant');
 const { sequelize } = require('../utils/database');
 const { Op } = require('sequelize');
+const { io } = require('../socket');
 
 
 /**
@@ -37,13 +38,14 @@ async function addRoom(req, res) {
 
     let privateRoomName = "";
 
+    const user = await User.findOne({
+        where: {
+            id: participantIds[0]
+        },
+        attributes: ["id", "userName", "avatar"]
+    });
+
     if (!isGroup) {
-        const user = await User.findOne({
-            where: {
-                id: participantIds[0]
-            },
-            attributes: ["id", "userName"]
-        });
 
         // to check if chat/user (as this is not a group) already exists
         const previousRooms = await owner.getRooms({
@@ -89,7 +91,10 @@ async function addRoom(req, res) {
         id: room.dataValues?.id,
         isGroup: room.dataValues?.isGroup,
         roomName: room.dataValues?.isGroup ? room.dataValues?.roomName : privateRoomName,
-        lastMessage: null
+        targetUserId: !isGroup ? user.dataValues?.id : null,
+        avatar: !isGroup ? user.dataValues?.avatar : null,
+        isOnline: !isGroup ? io.sockets.adapter.rooms.has(user.dataValues?.id) : null,
+        lastMessage: null,
     }
     res.status(200).json({ success: true, msg: "Created A Room", room: room });
 }

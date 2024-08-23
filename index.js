@@ -6,6 +6,7 @@ const cors = require('cors');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { Server } = require('socket.io');
+const { app, server } = require('./server');
 
 const { sequelize } = require('./utils/database');
 
@@ -30,9 +31,6 @@ async function createAll() {
 
 createAll();
 
-const app = express()
-const server = http.createServer(app);
-
 app.use(logger('dev'));
 app.use(cors({
     origin: process.env.FRONTEND_URL,
@@ -51,7 +49,7 @@ app.get("/", (req, res) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/chat", chatRouter);
 
-initializeSocket(server);
+initializeSocket();
 
 app.use((req, res) => {
     res.status(404).json({ success: false, msg: "404 resource not found" });

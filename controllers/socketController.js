@@ -4,19 +4,15 @@ const Room = require("../models/Room");
 const Message = require("../models/Message");
 const User = require('../models/User');
 const { Op } = require('sequelize');
-
+const { server } = require('../server');
+const { io } = require('../socket');
 
 /**
  * 
  * @param {express.Application} server 
  */
-function initializeSocket(server) {
-    const io = new Server(server, {
-        cors: {
-            origin: process.env.FRONTEND_URL,
-            credentials: true
-        }
-    })
+function initializeSocket() {
+
 
     io.on('connection', async (socket) => {
         console.log("client connected");
