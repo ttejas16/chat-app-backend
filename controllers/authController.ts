@@ -1,26 +1,21 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+import { Request, Response } from "express";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 
-const User = require('../models/User');
-const Room = require("../models/Room");
-const Participant = require("../models/Participant");
-const Message = require("../models/Message");
+import { User as UserType } from "../types/user";
+import User from "../models/User";
 
-const { uploadImage } = require('../utils/cloudinaryUpload');
+import { uploadImage } from "../utils/cloudinaryUpload";
+import z from "zod";
+import { userSchema } from "../routes/authRouter";
 
-function createToken(payload) {
-    jwt.decode()
-    const token = jwt.sign({ ...payload }, process.env.JWT_SECRET_KEY, { expiresIn: 60 * 60 });
+function createToken(payload: UserType) {
+    const token = jwt.sign(payload, process.env.JWT_SECRET_KEY!, { expiresIn: 60 * 60 });
     return token;
 }
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
-*/
-async function getUser(req, res) {
+
+async function getUser(req: Request, res: Response) {
     const userId = req.user?.id;
 
     if (!userId) {
@@ -44,41 +39,7 @@ async function getUser(req, res) {
     res.status(200).json({ success: true, user: user });
 }
 
-
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function fetchUserProfile(req, res) {
-    const userId = req.user?.profile?.id;
-
-    if (!req.user?.isAuthenticated || !userId) {
-        res.json({ success: false, msg: "Unauthorised" });
-        return;
-    }
-
-    const user = await User.findOne({
-        where: {
-            id: userId
-        },
-        attributes: ["id", "userName", "email", "status", "createdAt", "updatedAt"]
-    });
-
-    if (!user) {
-        res.json({ success: false, msg: "Failed To Fetch Profile Info!" });
-        return;
-    }
-
-    res.json({ success: true, profile: { ...user.dataValues } });
-}
-
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function updateProfile(req, res) {
+async function updateProfile(req: Request, res: Response) {
     const { avatar, userName, status } = req.body;
     let newAvatarURL = null;
 
@@ -101,8 +62,7 @@ async function updateProfile(req, res) {
         where: {
             id: req.user.id
         },
-        returning: true,
-        raw: true
+        returning: ["id", "email", "userName", "avatar", "status"],
     });
 
     if (updateCount == 0) {
@@ -110,17 +70,11 @@ async function updateProfile(req, res) {
         return;
     }
 
-    delete updatedUser.hash;
-
-    res.json({ success: true, msg: "Profile Updated", updatedProfile: updatedUser });
+    res.json({ success: true, msg: "Profile Updated", updatedProfile: updatedUser.dataValues });
 }
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function login(req, res) {
+
+async function login(req: Request, res: Response) {
     const email = req.body.email?.trim();
     const password = req.body.password?.trim();
 
@@ -166,18 +120,15 @@ async function login(req, res) {
         return;
     }
 
-    delete user.hash;
+    // delete user.hash;
+    const { hash, ...result } = user;
+    console.log(result);
 
-    res.status(200).json({ success: true, msg: "Login successfull", user: user });
+    res.status(200).json({ success: true, msg: "Login successfull", user: result });
 }
 
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-function logout(req, res) {
+function logout(req: Request, res: Response) {
     res.clearCookie('accessToken', {
         httpOnly: true,
         secure: true,
@@ -188,16 +139,12 @@ function logout(req, res) {
 }
 
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function signup(req, res) {
+async function signup(req: Request<{}, {}, z.infer<typeof userSchema>>, res: Response) {
 
-    const userName = req.body.userName?.trim();
-    const email = req.body.email?.trim();
-    const password = req.body.password?.trim();
+    const userName = req.body.userName;
+    const email = req.body.email;
+    const password = req.body.password;
+
 
     if (!userName || !email || !password) {
         res.status(400).json({ success: false, msg: "Empty credentials are not allowed" });
@@ -232,4 +179,4 @@ async function signup(req, res) {
 }
 
 
-module.exports = { login, logout, signup, getUser, fetchUserProfile, updateProfile };
+export { login, logout, signup, getUser, updateProfile };

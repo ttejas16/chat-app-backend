@@ -1,7 +1,7 @@
-const express = require('express');
-const chatRouter = express.Router();
-const chatController = require("../controllers/chatController");
+import { Router } from "express";
+import * as chatController from "../controllers/chatController";
 
+const chatRouter = Router();
 
 chatRouter.post("/searchUsers", chatController.searchUsers);
 
@@ -11,4 +11,4 @@ chatRouter.post("/getRooms", chatController.getRoomList);
 chatRouter.post("/addMessage", chatController.addMessage);
 chatRouter.post("/getMessages", chatController.getMessages);
 
-module.exports = chatRouter;
+export default chatRouter;

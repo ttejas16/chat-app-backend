@@ -1,19 +1,12 @@
-const express = require('express');
-const User = require('../models/User');
-const Room = require('../models/Room');
-const Message = require('../models/Message');
-const Participant = require('../models/Participant');
-const { sequelize } = require('../utils/database');
-const { Op } = require('sequelize');
-const { io } = require('../socket');
+import { Request, Response } from "express";
+import User, { UserModel } from "../models/User";
+import Room from "../models/Room";
+import Message, { MessageModel } from "../models/Message";
+import { sequelize } from "../utils/database";
+import { io } from "../socket";
 
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function addRoom(req, res) {
+async function addRoom(req: Request, res: Response) {
     const userId = req.body.userId; // id of user who creates a room/chat/group
     const participantIds = req.body.participants; // array of id(user)
     const isGroup = req.body.isGroup;
@@ -45,6 +38,11 @@ async function addRoom(req, res) {
         attributes: ["id", "userName", "avatar"]
     });
 
+    if (!user) {
+        res.status(404).json({ success: false, msg: "Can not find user " });
+        return;
+    }
+
     if (!isGroup) {
 
         // to check if chat/user (as this is not a group) already exists
@@ -66,13 +64,13 @@ async function addRoom(req, res) {
         if (previousRooms.length > 0) {
             res.status(400).json({
                 success: false,
-                msg: `You Already Have A Chat With ${user.dataValues?.userName}`
+                msg: `You Already Have A Chat With ${user.dataValues.userName}`
             });
             return;
         }
 
         // set opposite user's name
-        privateRoomName = user.dataValues?.userName;
+        privateRoomName = user.dataValues.userName;
     }
 
     let room = await Room.create({
@@ -87,25 +85,20 @@ async function addRoom(req, res) {
 
     const _ = await room.addUsers([userId, ...participantIds]);
 
-    room = {
-        id: room.dataValues?.id,
-        isGroup: room.dataValues?.isGroup,
-        roomName: room.dataValues?.isGroup ? room.dataValues?.roomName : privateRoomName,
-        targetUserId: !isGroup ? user.dataValues?.id : null,
-        avatar: !isGroup ? user.dataValues?.avatar : null,
-        isOnline: !isGroup ? io.sockets.adapter.rooms.has(user.dataValues?.id) : null,
+    const resRoom = {
+        id: room.dataValues.id,
+        isGroup: room.dataValues.isGroup,
+        roomName: room.dataValues.isGroup ? room.dataValues.roomName : privateRoomName,
+        targetUserId: !isGroup ? user.dataValues.id : null,
+        avatar: !isGroup ? user.dataValues.avatar : null,
+        isOnline: !isGroup ? io.sockets.adapter.rooms.has(user.dataValues.id) : null,
         lastMessage: null,
     }
-    res.status(200).json({ success: true, msg: "Created A Room", room: room });
+    res.status(200).json({ success: true, msg: "Created A Room", room: resRoom });
 }
 
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function searchUsers(req, res) {
+async function searchUsers(req: Request, res: Response) {
     const email = req.body.email;
 
     if (!email) {
@@ -134,12 +127,7 @@ async function searchUsers(req, res) {
 }
 
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function getRoomList(req, res) {
+async function getRoomList(req: Request, res: Response) {
     const userId = req.body.userId;
 
     //check if refrence id is provided or not
@@ -164,15 +152,15 @@ async function getRoomList(req, res) {
         include: [
             {
                 model: User,
-                attributes: ["id", "userName", "avatar"]
+                attributes: ["id", "userName", "avatar"],
             },
             {
                 model: Message,
-                attributes: ["content", "UserId"],
-                include: {
+                attributes: ["content", "userId"],
+                include: [{
                     model: User,
-                    attributes: ["userName"]
-                },
+                    attributes: ["userName"],
+                }],
                 order: [
                     ["createdAt", "DESC"]
                 ],
@@ -182,54 +170,48 @@ async function getRoomList(req, res) {
         attributes: ["id", "isGroup", "roomName"]
     });
 
-
     let rooms = userRooms.map((room) => {
-        let roomName = room.dataValues?.roomName;
+        let roomName = room.dataValues.roomName;
         let targetUserId = null;
         let avatar = null;
-        let lastMessage = room.dataValues?.Messages.map((msg) => {
-            let user = msg.dataValues?.User;
 
+        // room.Messages will exist because we are JOINING the message table
+        // message.User will also exist because the same we are joining Message with User on id
+        let lastMessage = room.dataValues.Messages!.map((msg: MessageModel) => {
             return {
-                content: msg.dataValues?.content,
+                content: msg.dataValues.content,
                 user: {
-                    id: msg.dataValues?.UserId,
-                    userName: user.dataValues?.userName,
+                    id: msg.dataValues.User!.id,
+                    userName: msg.dataValues.User!.userName,
                 }
             };
         });
 
-        if (!room.dataValues?.isGroup) {
-            room.dataValues?.Users?.forEach(u => {
+        if (!room.dataValues.isGroup) {
+            room.dataValues.Users!.forEach((u: UserModel) => {
 
-                if (u.id !== user.id) {
-                    roomName = u.dataValues?.userName;
-                    avatar = u.dataValues?.avatar
-                    targetUserId = u.dataValues?.id;
+                if (u.dataValues.id !== user.id) {
+                    roomName = u.dataValues.userName;
+                    avatar = u.dataValues.avatar
+                    targetUserId = u.dataValues.id;
                 }
-            });
+            })
         }
 
         return {
-            id: room.dataValues?.id,
-            isGroup: room.dataValues?.isGroup,
+            id: room.dataValues.id,
+            isGroup: room.dataValues.isGroup,
             roomName: roomName,
             targetUserId: targetUserId,
             avatar: avatar,
-            lastMessage: lastMessage.length != 0 ? lastMessage[0] : null
+            lastMessage: (lastMessage.length != 0) ? lastMessage[0] : null
         };
     });
 
     res.status(200).json({ success: true, msg: "Found Rooms", rooms: rooms });
 }
 
-
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function addMessage(req, res) {
+async function addMessage(req: Request, res: Response) {
     const userId = req.body.userId;
     const roomId = req.body.roomId;
 
@@ -241,8 +223,8 @@ async function addMessage(req, res) {
     try {
         const _ = await Message.create({
             content: "hello hello test from luffy",
-            UserId: userId,
-            RoomId: roomId
+            userId: userId,
+            roomId: roomId
         });
 
     } catch (err) {
@@ -255,12 +237,7 @@ async function addMessage(req, res) {
 }
 
 
-/**
- * 
- * @param {express.Request} req 
- * @param {express.Response} res 
- */
-async function getMessages(req, res) {
+async function getMessages(req: Request, res: Response) {
     const roomId = req.body.roomId;
 
     //check if room refrence id is provided or not
@@ -271,13 +248,13 @@ async function getMessages(req, res) {
 
     const result = await Message.findAll({
         where: {
-            RoomId: roomId
+            roomId: roomId
         },
         include: {
             model: User,
             attributes: ["userName"]
         },
-        attributes: ["UserId", "RoomId", "content"],
+        attributes: ["userId", "roomId", "content"],
         order: [
             ["createdAt", "DESC"]
         ],
@@ -290,11 +267,13 @@ async function getMessages(req, res) {
     }
 
     let messages = result.map((msg, index) => {
+
+        // message.User will also exist because the same we are joining Message with User on id
         return {
-            content: msg.dataValues?.content,
-            userId: msg.dataValues?.UserId,
-            roomId: msg.dataValues?.RoomId,
-            userName: msg.dataValues?.User?.userName
+            content: msg.dataValues.content,
+            userId: msg.dataValues.User!.id,
+            roomId: msg.dataValues.roomId,
+            userName: msg.dataValues.User!.userName
         }
     })
     messages = messages.reverse()
@@ -302,4 +281,4 @@ async function getMessages(req, res) {
     res.status(200).json({ success: true, msg: "Found Messages", messages: messages });
 }
 
-module.exports = { addRoom, getRoomList, addMessage, getMessages, searchUsers };
+export { addRoom, getRoomList, addMessage, getMessages, searchUsers };
