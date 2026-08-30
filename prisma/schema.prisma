@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id    String @id @default(uuid())
+  email   String @unique
+  name    String @unique
+
+  avatar    String @default("")
+  hash    String
+  status    String @default("Hello there!")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rooms   RoomMember[]
+  messages    Message[]
+  roomsCreated    Room[]
+
+  invitesReceived   Invite[] @relation("InvitedUser")
+  invitesSent   Invite[] @relation("InvitedBy")
+
+  @@map("users")
+}
+
+model Room {
+  id    String @id @default(uuid())
+  name    String?
+  type    RoomType
+  dmKey   String? @unique
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User @relation(fields: [creatorId], references: [id])
+  creatorId   String
+
+  members   RoomMember[]
+  messages    Message[]
+  invites   Invite[]
+
+  @@map("rooms")
+}
+
+model RoomMember {
+  roomId    String
+  userId    String
+  role    RoomRole    @default(MEMBER)
+
+  room    Room @relation(fields: [roomId], references: [id])
+  user    User @relation(fields: [userId], references: [id])
+
+  @@id([roomId, userId])
+  @@map("room_members")
+}
+
+
+model Message {
+  id    String @id @default(uuid())
+  content   String
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt    DateTime?
+
+  room    Room @relation(fields: [roomId], references: [id])
+  roomId    String
+
+  sender   User @relation(fields: [senderId], references: [id])
+  senderId   String
+
+  @@map("messages")
+}
+
+model Invite {
+  id    String @id @default(uuid())
+  inviteMessage String?
+  status InviteStatus @default(PENDING)
+
+  roomId    String
+  userId    String
+  invitedById   String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User @relation("InvitedUser", fields: [userId], references: [id])
+  room    Room @relation(fields: [roomId], references: [id])
+  invitedBy   User @relation("InvitedBy", fields: [invitedById], references: [id])
+
+  @@index([userId])
+  @@index([invitedById])
+
+  @@map("invites")
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum RoomType {
+  DM
+  GROUP
+}
+
+enum RoomRole {
+  MEMBER
+  ADMIN
+  OWNER
+}

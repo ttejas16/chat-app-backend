@@ -1,284 +1,269 @@
 import { Request, Response } from "express";
-import User, { UserModel } from "../models/User";
-import Room from "../models/Room";
-import Message, { MessageModel } from "../models/Message";
-import { sequelize } from "../utils/database";
 import { io } from "../socket";
-
+import { prisma } from "../utils/database";
+import { RoomType } from "../generated/prisma/enums";
 
 async function addRoom(req: Request, res: Response) {
-    const userId = req.body.userId; // id of user who creates a room/chat/group
-    const participantIds = req.body.participants; // array of id(user)
-    const isGroup = req.body.isGroup;
-    const roomName = req.body.roomName || "";
+  const userId = req.body.userId; // id of user who creates a room/chat/group
+  const participantIds = req.body.participants; // array of id(user)
+  const isGroup = req.body.isGroup;
+  const roomName = req.body.roomName || "";
 
-    if (!userId || !participantIds || participantIds.length == 0) {
-        res.status(400).json({ success: false, msg: "Can Not Add Rooms!" });
-        return;
-    }
+  if (!userId || !participantIds || participantIds.length == 0) {
+    res.status(400).json({ success: false, msg: "Can Not Add Rooms!" });
+    return;
+  }
 
-    const owner = await User.findOne({
-        where: {
-            id: userId
-        },
-        attributes: ["id"]
-    })
+  let privateRoomName = "";
 
-    if (!owner) {
-        res.status(401).json({ success: false, msg: "Unauthorised" });
-        return;
-    }
+  const user = await prisma.user.findUnique({
+    where: {
+      id: participantIds[0],
+    },
+    select: { id: true, name: true, avatar: true },
+  });
 
-    let privateRoomName = "";
+  if (!user) {
+    res.status(404).json({ success: false, msg: "Can not find user " });
+    return;
+  }
 
-    const user = await User.findOne({
-        where: {
-            id: participantIds[0]
-        },
-        attributes: ["id", "userName", "avatar"]
+  let room;
+
+  if (!isGroup) {
+    const dmKey = [userId, participantIds[0]]
+      .map((k) => k.toLowerCase())
+      .join(":");
+
+    room = await prisma.room.upsert({
+      where: { dmKey },
+      update: { dmKey },
+      create: {
+        type: RoomType.DM,
+        creatorId: userId,
+        dmKey: dmKey,
+      },
     });
 
-    if (!user) {
-        res.status(404).json({ success: false, msg: "Can not find user " });
-        return;
-    }
-
-    if (!isGroup) {
-
-        // to check if chat/user (as this is not a group) already exists
-        const previousRooms = await owner.getRooms({
-            include: [
-                {
-                    model: User,
-                    attributes: ["id"],
-                    on: {
-                        id: sequelize.col('User.id')
-                    },
-                    where: {
-                        id: participantIds[0]
-                    }
-                }
-            ]
-        });
-
-        if (previousRooms.length > 0) {
-            res.status(400).json({
-                success: false,
-                msg: `You Already Have A Chat With ${user.dataValues.userName}`
-            });
-            return;
-        }
-
-        // set opposite user's name
-        privateRoomName = user.dataValues.userName;
-    }
-
-    let room = await Room.create({
-        roomName: isGroup ? roomName : "",
-        isGroup: isGroup
+    // set opposite user's name
+    privateRoomName = user.name;
+  } else {
+    room = await prisma.room.create({
+      data: {
+        type: RoomType.GROUP,
+        name: roomName,
+        creatorId: userId,
+        members: {
+          connect: participantIds.map((id: string) => {
+            return { id };
+          }),
+        },
+      },
     });
+  }
 
-    if (!room) {
-        res.status(400).json({ success: false, msg: "Failed To Create Chat" });
-        return;
-    }
+  if (!room) {
+    res.status(400).json({ success: false, msg: "Failed To Create Chat" });
+    return;
+  }
 
-    const _ = await room.addUsers([userId, ...participantIds]);
-
-    const resRoom = {
-        id: room.dataValues.id,
-        isGroup: room.dataValues.isGroup,
-        roomName: room.dataValues.isGroup ? room.dataValues.roomName : privateRoomName,
-        targetUserId: !isGroup ? user.dataValues.id : null,
-        avatar: !isGroup ? user.dataValues.avatar : null,
-        isOnline: !isGroup ? io.sockets.adapter.rooms.has(user.dataValues.id) : null,
-        lastMessage: null,
-    }
-    res.status(200).json({ success: true, msg: "Created A Room", room: resRoom });
+  const resRoom = {
+    id: room.id,
+    isGroup,
+    roomName: isGroup ? room.name : privateRoomName,
+    targetUserId: !isGroup ? user.id : null,
+    avatar: !isGroup ? user.avatar : null,
+    isOnline: !isGroup ? io.sockets.adapter.rooms.has(user.id) : null,
+    lastMessage: null,
+  };
+  res.status(200).json({ success: true, msg: "Created A Room", room: resRoom });
 }
-
 
 async function searchUsers(req: Request, res: Response) {
-    const email = req.body.email;
+  const email = req.body.email;
 
-    if (!email) {
-        res.status(400).json({ success: false, msg: "Please Provide Details" });
-        return;
-    }
+  if (!email) {
+    res.status(400).json({ success: false, msg: "Please Provide Details" });
+    return;
+  }
 
-    const result = await User.findAll({
-        where: {
-            email: email
-        },
-        attributes: ["id", "userName"],
-        limit: 10
-    });
+  const result = await prisma.user.findMany({
+    where: {
+      email: email,
+    },
+    select: { id: true, name: true },
+    take: 10,
+  });
 
-    if (result.length == 0) {
-        res.status(200).json({ success: true, msg: "No Users Found!", users: [] })
-        return;
-    }
+  if (result.length == 0) {
+    res.status(200).json({ success: true, msg: "No Users Found!", users: [] });
+    return;
+  }
 
-    const users = result.map((v) => {
-        return v.dataValues;
-    })
-
-    res.json({ success: true, msg: "Users Found", users: users });
+  res.json({ success: true, msg: "Users Found", users: result });
 }
 
-
 async function getRoomList(req: Request, res: Response) {
-    const userId = req.body.userId;
+  const userId = req.body.userId;
 
-    //check if refrence id is provided or not
-    if (!userId) {
-        res.status(400).json({ success: false, msg: "Chats Not Found!" });
-        return;
-    }
+  //check if refrence id is provided or not
+  if (!userId) {
+    res.status(400).json({ success: false, msg: "Chats Not Found!" });
+    return;
+  }
 
-    const user = await User.findOne({
-        where: {
-            id: userId,
-        }
-    })
+  const user = await prisma.user.findUnique({
+    where: {
+      id: userId,
+    },
+  });
 
-    // check if such user exists
-    if (!user) {
-        res.status(401).json({ success: false, msg: "Unauthorised" });
-        return;
-    }
+  // check if such user exists
+  if (!user) {
+    res.status(401).json({ success: false, msg: "Unauthorised" });
+    return;
+  }
 
-    let userRooms = await user.getRooms({
-        include: [
-            {
-                model: User,
-                attributes: ["id", "userName", "avatar"],
+  let userRooms = await prisma.roomMember.findMany({
+    where: { userId: user.id },
+    include: {
+      room: {
+        include: {
+          members: {
+            where: {
+              userId: { not: user.id },
             },
-            {
-                model: Message,
-                attributes: ["content", "userId"],
-                include: [{
-                    model: User,
-                    attributes: ["userName"],
-                }],
-                order: [
-                    ["createdAt", "DESC"]
-                ],
-                limit: 1
-            }
-        ],
-        attributes: ["id", "isGroup", "roomName"]
+            select: {
+              user: { select: { id: true, name: true, avatar: true } },
+            },
+          },
+          messages: {
+            select: {
+              sender: { select: { name: true, id:true } },
+              content: true
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 1,
+          },
+        },
+      },
+    },
+  });
+
+  let rooms = userRooms.map(({room}) => {
+    let roomName = room.name;
+    let targetUserId = null;
+    let avatar = null;
+
+    // room.Messages will exist because we are JOINING the message table
+    // message.User will also exist because the same we are joining Message with User on id
+    let lastMessage = room.messages.map((msg) => {
+      return {
+        content: msg.content,
+        user: {
+          id: msg.sender.id,
+          userName: msg.sender.name,
+        },
+      };
     });
 
-    let rooms = userRooms.map((room) => {
-        let roomName = room.dataValues.roomName;
-        let targetUserId = null;
-        let avatar = null;
-
-        // room.Messages will exist because we are JOINING the message table
-        // message.User will also exist because the same we are joining Message with User on id
-        let lastMessage = room.dataValues.Messages!.map((msg: MessageModel) => {
-            return {
-                content: msg.dataValues.content,
-                user: {
-                    id: msg.dataValues.User!.id,
-                    userName: msg.dataValues.User!.userName,
-                }
-            };
-        });
-
-        if (!room.dataValues.isGroup) {
-            room.dataValues.Users!.forEach((u: UserModel) => {
-
-                if (u.dataValues.id !== user.id) {
-                    roomName = u.dataValues.userName;
-                    avatar = u.dataValues.avatar
-                    targetUserId = u.dataValues.id;
-                }
-            })
+    if (room.type == RoomType.DM) {
+      room.members.forEach(({ user:u }) => {
+        if (u.id !== user.id) {
+          roomName = u.name;
+          avatar = u.avatar;
+          targetUserId = u.id;
         }
+      });
+    }
 
-        return {
-            id: room.dataValues.id,
-            isGroup: room.dataValues.isGroup,
-            roomName: roomName,
-            targetUserId: targetUserId,
-            avatar: avatar,
-            lastMessage: (lastMessage.length != 0) ? lastMessage[0] : null
-        };
-    });
+    return {
+      id: room.id,
+      isGroup: room.type == RoomType.GROUP,
+      roomName: roomName,
+      targetUserId: targetUserId,
+      avatar: avatar,
+      lastMessage: lastMessage.length != 0 ? lastMessage[0] : null,
+    };
+  });
 
-    res.status(200).json({ success: true, msg: "Found Rooms", rooms: rooms });
+  res.status(200).json({ success: true, msg: "Found Rooms", rooms: rooms });
 }
 
 async function addMessage(req: Request, res: Response) {
-    const userId = req.body.userId;
-    const roomId = req.body.roomId;
+  const userId = req.body.userId;
+  const roomId = req.body.roomId;
 
-    if (!roomId || !userId) {
-        res.status(400).json({ success: false, msg: "Can Not Add Message" });
-        return;
-    }
+  if (!roomId || !userId) {
+    res.status(400).json({ success: false, msg: "Can Not Add Message" });
+    return;
+  }
 
-    try {
-        const _ = await Message.create({
-            content: "hello hello test from luffy",
-            userId: userId,
-            roomId: roomId
-        });
+  try {
+    const _ = await prisma.message.create({
+      data: {
+        content: "hello hello test from luffy",
+        roomId,
+        senderId: userId,
+      },
+    });
+  } catch (err) {
+    console.log(err);
+    res.status(400).json({ success: false, msg: "Something Went Wrong!" });
+    return;
+  }
 
-    } catch (err) {
-        console.log(err);
-        res.status(400).json({ success: false, msg: "Something Went Wrong!" });
-        return;
-    }
-
-    res.status(200).json({ success: true, msg: "Message Sent" });
+  res.status(200).json({ success: true, msg: "Message Sent" });
 }
 
-
 async function getMessages(req: Request, res: Response) {
-    const roomId = req.body.roomId;
+  const roomId = req.body.roomId;
 
-    //check if room refrence id is provided or not
-    if (!roomId) {
-        res.status(400).json({ success: false, msg: "Chats Not Found!" });
-        return;
-    }
+  //check if room refrence id is provided or not
+  if (!roomId) {
+    res.status(400).json({ success: false, msg: "Chats Not Found!" });
+    return;
+  }
 
-    const result = await Message.findAll({
-        where: {
-            roomId: roomId
-        },
-        include: {
-            model: User,
-            attributes: ["userName"]
-        },
-        attributes: ["userId", "roomId", "content"],
-        order: [
-            ["createdAt", "DESC"]
-        ],
-        limit: 20
-    })
+  const result = await prisma.message.findMany({
+    where: {
+      roomId: roomId,
+    },
+    select: {
+      roomId: true,
+      senderId: true,
+      content: true,
+      sender: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
 
-    if (!result.length) {
-        res.status(200).json({ success: true, msg: "No Messages For Specified Room", messages: [] });
-        return;
-    }
+  if (!result.length) {
+    res.status(200).json({
+      success: true,
+      msg: "No Messages For Specified Room",
+      messages: [],
+    });
+    return;
+  }
 
-    let messages = result.map((msg, index) => {
+  let messages = result.map((msg, index) => {
+    // message.User will also exist because the same we are joining Message with User on id
+    return {
+      content: msg.content,
+      userId: msg.senderId,
+      roomId: msg.roomId,
+      userName: msg.sender.name,
+    };
+  });
+  messages = messages.reverse();
 
-        // message.User will also exist because the same we are joining Message with User on id
-        return {
-            content: msg.dataValues.content,
-            userId: msg.dataValues.User!.id,
-            roomId: msg.dataValues.roomId,
-            userName: msg.dataValues.User!.userName
-        }
-    })
-    messages = messages.reverse()
-
-    res.status(200).json({ success: true, msg: "Found Messages", messages: messages });
+  res
+    .status(200)
+    .json({ success: true, msg: "Found Messages", messages: messages });
 }
 
 export { addRoom, getRoomList, addMessage, getMessages, searchUsers };

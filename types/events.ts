@@ -24,8 +24,8 @@ interface OnlineEventAcknowledgement {
 
 interface ClientToServerEvents {
     message: (message: MessageEventPayload) => void,
-    joinRoom: (roomId: string) => Promise<void>,
-    leaveRoom: (roomId: string) => void,
+    "join-room": (roomId: string) => Promise<void>,
+    "leave-room": (roomId: string) => void,
     online: (roomObjects: OnlineEventPayload[], f: (ack: OnlineEventAcknowledgement) => void) => void,
     typing: (payload: TypingEventPayload) => void
 }
@@ -42,8 +42,8 @@ interface ServerToClientEvents {
 // events that the socket-io client emits and server listens to them
 enum clientEvents {
     MESSAGE = 'message',
-    JOINROOM = 'joinRoom',
-    LEAVEROOM = 'leaveRoom',
+    JOINROOM = 'join-room',
+    LEAVEROOM = 'leave-room',
     ONLINE = 'online',
     TYPING = 'typing',
 

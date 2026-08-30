@@ -20,15 +20,16 @@ const cloudinaryOptions: UploadApiOptions = {
 async function uploadImage(file: Express.Multer.File) {
 
   try {
-    const result = await cloudinary.uploader.upload(file.path, cloudinaryOptions);
-    return result.url;
+    // const result = await cloudinary.uploader.upload(file.path, cloudinaryOptions);
+    return file.path;
+    // return result.url;
 
   } catch (err) {
     console.log(err);
     return null;
   }
   finally {
-    unlinkSync(file.path);
+    // unlinkSync(file.path);
   }
 
 }

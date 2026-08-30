@@ -1,139 +1,141 @@
-import { Op } from "sequelize";
 import { io } from "../socket";
 
-import Room from "../models/Room";
-import Message from "../models/Message";
-import User from "../models/User";
-
 import {
-    clientEvents,
-    MessageEventPayload,
-    OnlineEventAcknowledgement,
-    serverEvents,
-    TypingEventPayload
+  clientEvents,
+  MessageEventPayload,
+  OnlineEventAcknowledgement,
+  serverEvents,
+  TypingEventPayload,
 } from "../types/events";
+import { prisma } from "../utils/database";
+import { RoomType } from "../generated/prisma/enums";
 
 function initializeSocket() {
+  io.on(clientEvents.CONNECTION, (socket) => {
+    console.log("client connected");
+    socket.onAny((event, ...args) => {
+      console.log("Received:", event, args);
+    });
 
-    io.on(clientEvents.CONNECTION, (socket) => {
-        console.log("client connected");
+    // socket joins the room of unique id(the id of the user itself)
 
-        // socket joins the room of unique id(the id of the user itself)
+    // when client opens a chat,the 'join-room' event is emitted
+    // client joins the room of unique id
+    // exchanges messages with other client through that ("socket io")room
+    // broadcasts notifications to the ALL the users in room including himself
 
-        // when client opens a chat,the 'join-room' event is emitted
-        // client joins the room of unique id
-        // exchanges messages with other client through that ("socket io")room
-        // broadcasts notifications to the ALL the users in room including himself
+    const userId = socket.handshake.auth.userId as string;
+    socket.join(userId);
 
-        const userId = socket.handshake.auth.userId as string;
-        socket.join(userId);
+    socket.on(clientEvents.JOINROOM, async (roomId) => {
+      socket.join(roomId);
+      // select all users from the room
+      const room = await prisma.room.findUnique({
+        where: {
+          id: roomId,
+        },
+        select: {
+          members: { select: { user: true } },
+        },
+      });
 
-        socket.on(clientEvents.JOINROOM, async (roomId) => {
+      // const users = await room!.getUsers({
+      //     attributes: ["id", "userName"],
+      //     raw: true
+      // });
 
-            socket.join(roomId);
-            // select all users from the room
-            const room = await Room.findOne({
-                where: {
-                    id: roomId
-                }
-            })
+      const roomMembers = room?.members.map(({ user }) => {
+        return {
+          id: user.id,
+          userName: user.name,
+        };
+      });
 
-            const users = await room!.getUsers({
-                attributes: ["id", "userName"],
-                raw: true
-            });
+      async function messageEventHandler(message: MessageEventPayload) {
+        // update db
+        // send messages to the room members
+        // broadcast notifications to the users
 
-            const roomMembers = users.map((user) => {
-                return {
-                    id: user.id,
-                    userName: user.userName
-                }
-            })
+        io.to(roomId).emit(serverEvents.MESSAGE, message);
 
-            async function messageEventHandler(message: MessageEventPayload) {
-                // update db
-                // send messages to the room members
-                // broadcast notifications to the users
+        roomMembers?.forEach((user) => {
+          io.to(user.id).emit(serverEvents.NOTIFICATION, message);
+        });
 
-                io.to(roomId).emit(serverEvents.MESSAGE, message);
+        const _ = await prisma.message.create({
+          data: {
+            senderId: message.userId,
+            roomId: roomId,
+            content: message.content,
+          },
+        });
+      }
 
-                roomMembers.forEach(user => {
-                    io.to(user.id).emit(serverEvents.NOTIFICATION, message);
-                })
+      function handleLeaveRoom(roomId: string) {
+        // console.log('client left the room');
+        socket.leave(roomId);
+        socket.removeListener(clientEvents.MESSAGE, messageEventHandler);
+        socket.removeListener(clientEvents.TYPING, handleTypingEvents);
+        socket.removeListener(clientEvents.LEAVEROOM, handleLeaveRoom);
+      }
 
-                const _ = await Message.create({
-                    userId: message.userId,
-                    roomId: message.roomId,
-                    content: message.content
-                });
-            }
+      function handleTypingEvents(payload: TypingEventPayload) {
+        io.to(roomId).except(socket.id).emit(serverEvents.TYPING, payload);
+      }
 
-            function handleLeaveRoom(roomId: string) {
-                // console.log('client left the room');
-                socket.leave(roomId);
-                socket.removeListener(clientEvents.MESSAGE, messageEventHandler);
-                socket.removeListener(clientEvents.TYPING, handleTypingEvents);
-                socket.removeListener(clientEvents.LEAVEROOM, handleLeaveRoom);
-            }
+      socket.on(clientEvents.TYPING, handleTypingEvents);
+      socket.on(clientEvents.MESSAGE, messageEventHandler);
+      socket.on(clientEvents.LEAVEROOM, handleLeaveRoom);
+    });
 
-            function handleTypingEvents(payload: TypingEventPayload) {
-                io.to(roomId).except(socket.id).emit(serverEvents.TYPING, payload);
-            }
+    socket.on(clientEvents.ONLINE, (roomObjects, callback) => {
+      const acknowledgement: OnlineEventAcknowledgement = {};
 
-            socket.on(clientEvents.TYPING, handleTypingEvents);
-            socket.on(clientEvents.MESSAGE, messageEventHandler);
-            socket.on(clientEvents.LEAVEROOM, handleLeaveRoom);
-        })
+      roomObjects.forEach((room) => {
+        io.to(room.targetUserId).emit(serverEvents.ONLINE, room.roomId);
 
-        socket.on(clientEvents.ONLINE, (roomObjects, callback) => {
-            const acknowledgement: OnlineEventAcknowledgement = {};
+        if (io.sockets.adapter.rooms.has(room.targetUserId)) {
+          acknowledgement[room.roomId] = true;
+        }
+      });
 
-            roomObjects.forEach((room) => {
-                io.to(room.targetUserId).emit(serverEvents.ONLINE, room.roomId);
+      callback(acknowledgement);
+    });
 
-                if (io.sockets.adapter.rooms.has(room.targetUserId)) {
-                    acknowledgement[room.roomId] = true;
-                }
-            });
-
-            callback(acknowledgement);
-        })
-
-        socket.on(clientEvents.DISCONNET, async (params) => {
-            // get all rooms of the current user to notify them
-            const user = await User.findOne({
-                where: {
-                    id: socket.handshake.auth.userId
-                },
-                attributes: ["id"],
-            });
-            let userRooms = await user!.getRooms({
-                where: {
-                    isGroup: false
-                },
-                include: [
-                    {
-                        model: User,
+    socket.on(clientEvents.DISCONNET, async (params) => {
+      // get all rooms of the current user to notify them
+      const userRooms = await prisma.roomMember.findMany({
+        where: {
+          userId: socket.handshake.auth.userId,
+          room: { type: RoomType.DM },
+        },
+        select: { 
+            room: {
+                select:{
+                    id: true,
+                    members: {
                         where: {
-                            id: {
-                                [Op.ne]: user!.dataValues?.id
-                            }
+                            userId: { not: socket.handshake.auth.userId }
                         },
-                        attributes: ["id"],
-                    },
-                ],
-                attributes: ["id"],
-            });
-            userRooms.forEach(room => {
-                io.to(room.dataValues.Users![0].dataValues.id)
-                    .emit(serverEvents.OFFLINE, socket.handshake.auth.userId);
-            })
+                        select: { userId:true }
+                    }
+                }
+            }
+         },
+      });
 
-            console.log("client disconnected");
-            socket.leave(socket.handshake.auth.userId);
-            socket.removeAllListeners();
-        })
-    })
+      userRooms.forEach(({ room }) => {
+        io.to(room.members[0].userId).emit(
+          serverEvents.OFFLINE,
+          socket.handshake.auth.userId,
+        );
+      });
+
+      console.log("client disconnected");
+      socket.leave(socket.handshake.auth.userId);
+      socket.removeAllListeners();
+    });
+  });
 }
 
 export default initializeSocket;

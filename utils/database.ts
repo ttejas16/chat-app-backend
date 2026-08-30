@@ -1,24 +1,8 @@
-import process from "process";
-import { Sequelize, DataTypes } from "sequelize";
+import { PrismaClient } from "../generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
+const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL
+})
 
-const sequelize = new Sequelize(
-    process.env.DATABASE_URL!
-    , {
-        dialect: 'postgres',
-        logging: false
-    });
-
-async function test() {
-    try {
-        await sequelize.authenticate();
-        console.log("connected to postgres");
-    } catch (err) {
-        console.log(err)
-        console.log("connection to postgres failed");
-
-    }
-}
-test();
-
-export { sequelize, DataTypes };
+export const prisma = new PrismaClient({ adapter });
