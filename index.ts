@@ -8,10 +8,10 @@ import { json } from "express";
 import { app, httpServer } from "./server.js";
 
 import { verifyToken } from "./middleware/verifyToken.js";
-import initializeSocket from "./controllers/socketController.js";
 import v1Router from "./routes/v1/router.js";
 import { pingDatabase } from "./utils/database.js";
 import { errorHandler } from "./utils/errorHandler.js";
+import initializeSocket from "./features/socket/socket.js";
 
 app.use(morgan("dev"));
 app.use(

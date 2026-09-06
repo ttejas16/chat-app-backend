@@ -1,14 +1,13 @@
-import { io } from "../socket.js";
-
+import { RoomType } from "../../generated/prisma/enums.js";
+import { io } from "../../socket.js";
 import {
   clientEvents,
+  serverEvents,
   type MessageEventPayload,
   type OnlineEventAcknowledgement,
-  serverEvents,
   type TypingEventPayload,
-} from "../types/events.js";
-import { prisma } from "../utils/database.js";
-import { RoomType } from "../generated/prisma/enums.js";
+} from "../../types/events.js";
+import { prisma } from "../../utils/database.js";
 
 function initializeSocket() {
   io.on(clientEvents.CONNECTION, (socket) => {
@@ -91,7 +90,7 @@ function initializeSocket() {
     socket.on(clientEvents.ONLINE, (roomObjects, callback) => {
       const acknowledgement: OnlineEventAcknowledgement = {};
 
-      roomObjects.forEach((room:any) => {
+      roomObjects.forEach((room: any) => {
         io.to(room.targetUserId).emit(serverEvents.ONLINE, room.roomId);
 
         if (io.sockets.adapter.rooms.has(room.targetUserId)) {
@@ -109,21 +108,21 @@ function initializeSocket() {
           userId: socket.handshake.auth.userId,
           room: { type: RoomType.DM },
         },
-        select: { 
-            room: {
-                select:{
-                    id: true,
-                    members: {
-                        where: {
-                            userId: { not: socket.handshake.auth.userId }
-                        },
-                        select: { userId:true }
-                    }
-                }
-            }
-         },
+        select: {
+          room: {
+            select: {
+              id: true,
+              members: {
+                where: {
+                  userId: { not: socket.handshake.auth.userId },
+                },
+                select: { userId: true },
+              },
+            },
+          },
+        },
       });
-      
+
       userRooms.forEach(({ room }) => {
         io.to(room.members[0]?.userId || "").emit(
           serverEvents.OFFLINE,
