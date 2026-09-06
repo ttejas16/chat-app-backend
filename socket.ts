@@ -1,13 +1,19 @@
 import process from "process";
 import { Server } from "socket.io";
-import { httpServer } from "./server";
-import { ClientToServerEvents, ServerToClientEvents } from "./types/events";
+import { httpServer } from "./server.js";
+import {
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+} from "./types/events.js";
 
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+const io: Server = new Server<ClientToServerEvents, ServerToClientEvents>(
+  httpServer,
+  {
     cors: {
-        origin: process.env.FRONTEND_URL,
-        credentials: true
-    }
-})
+      origin: process.env.FRONTEND_URL,
+      credentials: true,
+    },
+  },
+);
 
-export { io }
+export { io };

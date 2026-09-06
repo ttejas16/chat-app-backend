@@ -1,7 +1,5 @@
 import { unlinkSync } from 'fs';
-import { UploadApiOptions } from 'cloudinary';
-import cloudinary from './cloudinary';
-import { Express } from 'express';
+import { type UploadApiOptions } from 'cloudinary';
 
 // options for cloudinary
 const cloudinaryOptions: UploadApiOptions = {

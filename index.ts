@@ -5,12 +5,14 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import morgan from "morgan";
 import { json } from "express";
-import { app, httpServer } from "./server";
+import { app, httpServer } from "./server.js";
 
-import { verifyToken } from "./middleware/verifyToken";
-import authRouter from "./routes/authRouter";
-import chatRouter from "./routes/chatRouter";
-import initializeSocket from "./controllers/socketController";
+import { verifyToken } from "./middleware/verifyToken.js";
+import chatRouter from "./routes/chatRouter.js";
+import initializeSocket from "./controllers/socketController.js";
+import v1Router from "./routes/v1/router.js";
+import { pingDatabase } from "./utils/database.js";
+import { errorHandler } from "./utils/errorHandler.js";
 
 app.use(morgan("dev"));
 app.use(
@@ -29,8 +31,9 @@ app.get("/", (req, res) => {
   res.json("test");
 });
 
-app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/", v1Router);
 app.use("/api/v1/chat", chatRouter);
+app.use(errorHandler);
 
 initializeSocket();
 
@@ -40,4 +43,5 @@ app.use((req, res) => {
 
 httpServer.listen(process.env.PORT, async () => {
   console.log(`server listening on port ${process.env.PORT}`);
+  pingDatabase();
 });

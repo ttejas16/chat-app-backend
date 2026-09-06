@@ -1,14 +1,14 @@
-import { io } from "../socket";
+import { io } from "../socket.js";
 
 import {
   clientEvents,
-  MessageEventPayload,
-  OnlineEventAcknowledgement,
+  type MessageEventPayload,
+  type OnlineEventAcknowledgement,
   serverEvents,
-  TypingEventPayload,
-} from "../types/events";
-import { prisma } from "../utils/database";
-import { RoomType } from "../generated/prisma/enums";
+  type TypingEventPayload,
+} from "../types/events.js";
+import { prisma } from "../utils/database.js";
+import { RoomType } from "../generated/prisma/enums.js";
 
 function initializeSocket() {
   io.on(clientEvents.CONNECTION, (socket) => {
@@ -91,7 +91,7 @@ function initializeSocket() {
     socket.on(clientEvents.ONLINE, (roomObjects, callback) => {
       const acknowledgement: OnlineEventAcknowledgement = {};
 
-      roomObjects.forEach((room) => {
+      roomObjects.forEach((room:any) => {
         io.to(room.targetUserId).emit(serverEvents.ONLINE, room.roomId);
 
         if (io.sockets.adapter.rooms.has(room.targetUserId)) {
@@ -123,9 +123,9 @@ function initializeSocket() {
             }
          },
       });
-
+      
       userRooms.forEach(({ room }) => {
-        io.to(room.members[0].userId).emit(
+        io.to(room.members[0]?.userId || "").emit(
           serverEvents.OFFLINE,
           socket.handshake.auth.userId,
         );

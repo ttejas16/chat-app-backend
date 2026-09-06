@@ -1,6 +1,6 @@
-import { Request, Response, NextFunction } from "express";
+import { type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { User } from "../types/user";
+import { type User } from "../types/user.js";
 
 function verifyToken(req: Request, res: Response, next: NextFunction) {
     const token = req.cookies?.accessToken as string;

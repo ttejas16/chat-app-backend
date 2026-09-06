@@ -62,12 +62,12 @@ enum serverEvents {
 }
 
 export {
-    MessageEventPayload,
-    TypingEventPayload,
-    OnlineEventPayload,
-    OnlineEventAcknowledgement,
+    type MessageEventPayload,
+    type TypingEventPayload,
+    type OnlineEventPayload,
+    type OnlineEventAcknowledgement,
     clientEvents,
     serverEvents,
-    ClientToServerEvents,
-    ServerToClientEvents
+    type ClientToServerEvents,
+    type ServerToClientEvents
 }

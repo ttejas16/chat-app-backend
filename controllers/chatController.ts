@@ -1,7 +1,7 @@
-import { Request, Response } from "express";
-import { io } from "../socket";
-import { prisma } from "../utils/database";
-import { RoomType } from "../generated/prisma/enums";
+import { type Request, type Response } from "express";
+import { io } from "../socket.js";
+import { prisma } from "../utils/database.js";
+import { RoomType } from "../generated/prisma/enums.js";
 
 async function addRoom(req: Request, res: Response) {
   const userId = req.body.userId; // id of user who creates a room/chat/group
