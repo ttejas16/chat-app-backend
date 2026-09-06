@@ -1,38 +1,36 @@
-import { type Request, type Response } from "express";
-import { io } from "../socket.js";
-import { prisma } from "../utils/database.js";
-import { RoomType } from "../generated/prisma/enums.js";
+import { RoomType } from "../../generated/prisma/enums.js";
+import { io } from "../../socket.js";
+import { prisma } from "../../utils/database.js";
+import ApiError from "../../utils/error.js";
 
-async function addRoom(req: Request, res: Response) {
-  const userId = req.body.userId; // id of user who creates a room/chat/group
-  const participantIds = req.body.participants; // array of id(user)
-  const isGroup = req.body.isGroup;
-  const roomName = req.body.roomName || "";
-
+export async function createRoom(
+  userId: string,
+  participantIds: string[],
+  isGroup: boolean,
+  roomName: string,
+) {
   if (!userId || !participantIds || participantIds.length == 0) {
-    res.status(400).json({ success: false, msg: "Can Not Add Rooms!" });
-    return;
+    throw new ApiError(400, "Cannot add rooms. Invalid data.");
   }
 
   let privateRoomName = "";
 
   const user = await prisma.user.findUnique({
     where: {
-      id: participantIds[0],
+      id: participantIds[0]!,
     },
     select: { id: true, name: true, avatar: true },
   });
 
   if (!user) {
-    res.status(404).json({ success: false, msg: "Can not find user " });
-    return;
+    throw new ApiError(404, "User not found.");
   }
 
   let room;
 
   if (!isGroup) {
     const dmKey = [userId, participantIds[0]]
-      .map((k) => k.toLowerCase())
+      .map((k) => k!.toLowerCase())
       .join(":");
 
     room = await prisma.room.upsert({
@@ -54,8 +52,8 @@ async function addRoom(req: Request, res: Response) {
         name: roomName,
         creatorId: userId,
         members: {
-          connect: participantIds.map((id: string) => {
-            return { id };
+          create: participantIds.map((id: string) => {
+            return { userId: id };
           }),
         },
       },
@@ -63,11 +61,10 @@ async function addRoom(req: Request, res: Response) {
   }
 
   if (!room) {
-    res.status(400).json({ success: false, msg: "Failed To Create Chat" });
-    return;
+    throw new ApiError(400, "Failed to create room");
   }
 
-  const resRoom = {
+  return {
     id: room.id,
     isGroup,
     roomName: isGroup ? room.name : privateRoomName,
@@ -76,40 +73,12 @@ async function addRoom(req: Request, res: Response) {
     isOnline: !isGroup ? io.sockets.adapter.rooms.has(user.id) : null,
     lastMessage: null,
   };
-  res.status(200).json({ success: true, msg: "Created A Room", room: resRoom });
 }
 
-async function searchUsers(req: Request, res: Response) {
-  const email = req.body.email;
-
-  if (!email) {
-    res.status(400).json({ success: false, msg: "Please Provide Details" });
-    return;
-  }
-
-  const result = await prisma.user.findMany({
-    where: {
-      email: email,
-    },
-    select: { id: true, name: true },
-    take: 10,
-  });
-
-  if (result.length == 0) {
-    res.status(200).json({ success: true, msg: "No Users Found!", users: [] });
-    return;
-  }
-
-  res.json({ success: true, msg: "Users Found", users: result });
-}
-
-async function getRoomList(req: Request, res: Response) {
-  const userId = req.body.userId;
-
+export async function getRooms(userId: string) {
   //check if refrence id is provided or not
   if (!userId) {
-    res.status(400).json({ success: false, msg: "Chats Not Found!" });
-    return;
+    throw new ApiError(400, "Chats not found. Invalid request.");
   }
 
   const user = await prisma.user.findUnique({
@@ -120,8 +89,7 @@ async function getRoomList(req: Request, res: Response) {
 
   // check if such user exists
   if (!user) {
-    res.status(401).json({ success: false, msg: "Unauthorised" });
-    return;
+    throw new ApiError(401, "Unauthorized");
   }
 
   let userRooms = await prisma.roomMember.findMany({
@@ -139,8 +107,8 @@ async function getRoomList(req: Request, res: Response) {
           },
           messages: {
             select: {
-              sender: { select: { name: true, id:true } },
-              content: true
+              sender: { select: { name: true, id: true } },
+              content: true,
             },
             orderBy: {
               createdAt: "desc",
@@ -152,7 +120,7 @@ async function getRoomList(req: Request, res: Response) {
     },
   });
 
-  let rooms = userRooms.map(({room}) => {
+  return userRooms.map(({ room }) => {
     let roomName = room.name;
     let targetUserId = null;
     let avatar = null;
@@ -170,7 +138,7 @@ async function getRoomList(req: Request, res: Response) {
     });
 
     if (room.type == RoomType.DM) {
-      room.members.forEach(({ user:u }) => {
+      room.members.forEach(({ user: u }) => {
         if (u.id !== user.id) {
           roomName = u.name;
           avatar = u.avatar;
@@ -188,43 +156,31 @@ async function getRoomList(req: Request, res: Response) {
       lastMessage: lastMessage.length != 0 ? lastMessage[0] : null,
     };
   });
-
-  res.status(200).json({ success: true, msg: "Found Rooms", rooms: rooms });
 }
 
-async function addMessage(req: Request, res: Response) {
-  const userId = req.body.userId;
-  const roomId = req.body.roomId;
-
+export async function createMessage(userId: string, roomId: string) {
   if (!roomId || !userId) {
-    res.status(400).json({ success: false, msg: "Can Not Add Message" });
-    return;
+    throw new ApiError(400, "Cant send message. Invalid request");
   }
 
-  try {
-    const _ = await prisma.message.create({
-      data: {
-        content: "hello hello test from luffy",
-        roomId,
-        senderId: userId,
-      },
-    });
-  } catch (err) {
-    console.log(err);
-    res.status(400).json({ success: false, msg: "Something Went Wrong!" });
-    return;
+  const message = await prisma.message.create({
+    data: {
+      content: "hello hello test from luffy",
+      roomId,
+      senderId: userId,
+    },
+  });
+
+  if (!message) {
+    throw new ApiError(500, "Cant send message. Server error");
   }
 
-  res.status(200).json({ success: true, msg: "Message Sent" });
+  return message;
 }
 
-async function getMessages(req: Request, res: Response) {
-  const roomId = req.body.roomId;
-
-  //check if room refrence id is provided or not
+export async function getMessages(roomId: string) {
   if (!roomId) {
-    res.status(400).json({ success: false, msg: "Chats Not Found!" });
-    return;
+    throw new ApiError(400, "Cant find message. Invalid request");
   }
 
   const result = await prisma.message.findMany({
@@ -241,15 +197,6 @@ async function getMessages(req: Request, res: Response) {
     take: 20,
   });
 
-  if (!result.length) {
-    res.status(200).json({
-      success: true,
-      msg: "No Messages For Specified Room",
-      messages: [],
-    });
-    return;
-  }
-
   let messages = result.map((msg, index) => {
     // message.User will also exist because the same we are joining Message with User on id
     return {
@@ -259,11 +206,22 @@ async function getMessages(req: Request, res: Response) {
       userName: msg.sender.name,
     };
   });
+
   messages = messages.reverse();
 
-  res
-    .status(200)
-    .json({ success: true, msg: "Found Messages", messages: messages });
+  return messages;
 }
 
-export { addRoom, getRoomList, addMessage, getMessages, searchUsers };
+export async function getUsers(email: string) {
+  if (!email) {
+    throw new ApiError(400, "Invalid request");
+  }
+
+  return await prisma.user.findMany({
+    where: {
+      email: email,
+    },
+    select: { id: true, name: true },
+    take: 10,
+  });
+}

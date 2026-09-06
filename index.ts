@@ -8,7 +8,6 @@ import { json } from "express";
 import { app, httpServer } from "./server.js";
 
 import { verifyToken } from "./middleware/verifyToken.js";
-import chatRouter from "./routes/chatRouter.js";
 import initializeSocket from "./controllers/socketController.js";
 import v1Router from "./routes/v1/router.js";
 import { pingDatabase } from "./utils/database.js";
@@ -32,7 +31,6 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/v1/", v1Router);
-app.use("/api/v1/chat", chatRouter);
 app.use(errorHandler);
 
 initializeSocket();
